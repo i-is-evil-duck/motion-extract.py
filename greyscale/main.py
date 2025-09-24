@@ -6,16 +6,16 @@ def nothing(x):
     pass
 
 def motion_preview_render():
-    input = input("path to inuit file").strip()
-    if not os.path.isfile(input):
-        print("file not found")
+    input_path = input("Enter the path to the input video file: ").strip()
+    if not os.path.isfile(input_path):
+        print("Error: File not found.")
         return
 
-    output = "output.mp4"
+    output_path = "output.mp4"
 
-    cap = cv2.VideoCapture(input)
+    cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
-        print("Error: cant open vid")
+        print("Error: Could not open video.")
         return
 
     width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -37,7 +37,6 @@ def motion_preview_render():
 
         delay = cv2.getTrackbarPos("Delay", "Motion Extract")
         alpha = cv2.getTrackbarPos("Alpha", "Motion Extract") / 100.0
-
         inverted = 255 - frame
         buffer.append(inverted)
 
@@ -51,22 +50,22 @@ def motion_preview_render():
 
         key = cv2.waitKey(int(1000/fps)) & 0xFF
 
-        if key == 27:  # ESC
+        if key == 27:
             break
-        elif key == ord('r'):  # r to render
-            print(f"save to {output} with delay={delay} frames and alpha={alpha}")
-            render_video(input, output, delay, alpha)
+        elif key == ord('r'):  #render
+            print(f"Rendering to {output_path} with delay={delay} frames and alpha={alpha}")
+            render_video(input_path, output_path, delay, alpha)
 
     cap.release()
     cv2.destroyAllWindows()
 
-def render_video(input, output, delay, alpha):
-    cap = cv2.VideoCapture(input)
+def render_video(input_path, output_path, delay, alpha):
+    cap = cv2.VideoCapture(input_path)
     width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps    = cap.get(cv2.CAP_PROP_FPS)
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output, fourcc, fps, (width, height))
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
     buffer = []
 
@@ -88,7 +87,7 @@ def render_video(input, output, delay, alpha):
 
     cap.release()
     out.release()
-    print("done")
+    print("Rendering complete.")
 
 if __name__ == "__main__":
     motion_preview_render()
