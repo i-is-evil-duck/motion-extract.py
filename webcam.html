@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Motion Extraction Example</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      overflow-y: auto; /* Enable vertical scrolling */
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f9;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      max-width: 600px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      text-align: center;
+      margin-bottom: 20px;
+      color: black;
+    }
+
+    .control-group {
+      margin-bottom: 15px;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    label {
+      font-size: 1rem;
+      margin-right: 10px;
+    }
+
+    input[type="range"], input[type="file"], input[type="number"] {
+      padding: 5px;
+      font-size: 1rem;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+      max-width: 400px;
+      margin: 10px auto;
+      display: block;
+    }
+
+    .resolution-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #resolutionDisplay, #motionBlendDisplay {
+      margin-left: 10px;
+      font-size: 1rem;
+    }
+
+    .resolution-slider {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+    }
+
+    button {
+      padding: 10px 20px;
+      background-color: #007bff;
+      border: none;
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+      border-radius: 5px;
+      max-width: 400px;
+      margin: 10px auto;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    #snapshot {
+      margin: 20px 0 40px 0;
+      width: 100%;
+      max-width: 520px;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    }
+
+    #video {
+      display: none;
+    }
+
+    .control-label {
+      font-size: 1rem;
+      margin-right: 10px;
+      display: block;
+      text-align: left;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    .range-display {
+      display: inline-block;
+      font-size: 1rem;
+    }
+
+    .error-message {
+      color: red;
+      font-size: 1rem;
+      margin-top: 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Motion Extraction Example</h1>
+
+    <p id="errorMessage" class="error-message">Camera access is blocked by your browser.</p>
+
+    <div class="control-group">
+      <button id="sourceToggle">Switch to Camera</button>
+    </div>
+
+    <div class="control-group" id="videoUploadGroup">
+      <input type="file" id="videoUpload" accept="video/*">
+      <div class="control-group" id="videoControlsGroup" style="display:none;">
+        <button id="restartVideo">Restart Video</button>
+        <button id="stopVideo">Stop Video</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <button id="freezeToggle">Freeze Frame</button>
+    </div>
+
+    <div class="control-group" id="delayControlGroup">
+      <label class="control-label" for="delay">Delay between snapshots (ms):</label>
+      <input type="number" id="delay" value="50" min="50" step="50">
+    </div>
+
+    <video id="video" autoplay controls></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <img id="snapshot" alt="Snapshot from video">
+
+    <div class="control-group resolution-container">
+      <label class="control-label" for="resolution">Resolution:</label>
+      <div class="resolution-slider">
+        <input type="range" id="resolution" min="320" max="1920" step="100" value="520">
+        <span id="resolutionDisplay" class="range-display">520</span>px
+      </div>
+    </div>
+
+    <!-- Motion Blend Slider -->
+    <div class="control-group">
+      <label class="control-label" for="motionBlend">Motion Overlay:</label>
+      <input type="range" id="motionBlend" min="0" max="100" step="1" value="100">
+      <span id="motionBlendDisplay" class="range-display">100%</span>
+    </div>
+  </div>
+
+  <script>
+    const options = {
+      resolution: 520,
+      delay: 50,
+      freezeFrame: false,
+      usingCamera: false,
+      motionBlend: 100 // New option
+    };
+
+    let captureInterval = null;
+    let previousImage = null;
+
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const snapshot = document.getElementById('snapshot');
+    const context = canvas.getContext('2d');
+
+    const delayControlGroup = document.getElementById('delayControlGroup');
+    const videoUploadGroup = document.getElementById('videoUploadGroup');
+    const sourceToggleButton = document.getElementById('sourceToggle');
+    const errorMessage = document.getElementById('errorMessage');
+
+    video.muted = true;
+
+    const updateDisplay = () => {
+      document.getElementById('resolutionDisplay').textContent = options.resolution;
+    };
+
+    const invertColors = (imageData) => {
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = 255 - data[i];
+        data[i + 1] = 255 - data[i + 1];
+        data[i + 2] = 255 - data[i + 2];
+      }
+      return imageData;
+    };
+
+    const cancelOutColors = (prevImageData, currentInvertedData) => {
+      const blendedData = new ImageData(prevImageData.width, prevImageData.height);
+      for (let i = 0; i < prevImageData.data.length; i += 4) {
+        blendedData.data[i]     = (prevImageData.data[i] + currentInvertedData.data[i]) / 2;
+        blendedData.data[i + 1] = (prevImageData.data[i + 1] + currentInvertedData.data[i + 1]) / 2;
+        blendedData.data[i + 2] = (prevImageData.data[i + 2] + currentInvertedData.data[i + 2]) / 2;
+        blendedData.data[i + 3] = 255;
+      }
+      return blendedData;
+    };
+
+    const captureFrame = () => {
+      if (!video.videoWidth || !video.videoHeight) return;
+
+      const aspectRatio = video.videoWidth / video.videoHeight;
+      const width = options.resolution;
+      const height = width / aspectRatio;
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+      const currentImageData = context.getImageData(0, 0, video.videoWidth, video.videoHeight);
+
+      if (previousImage) {
+        const invertedImageData = invertColors(context.getImageData(0, 0, video.videoWidth, video.videoHeight));
+        const blendedImageData = cancelOutColors(previousImage, invertedImageData);
+
+        // Blend motion overlay with original frame
+        const finalImageData = new ImageData(video.videoWidth, video.videoHeight);
+        const alpha = options.motionBlend / 100;
+        for (let i = 0; i < currentImageData.data.length; i += 4) {
+          finalImageData.data[i]     = (1 - alpha) * currentImageData.data[i]     + alpha * blendedImageData.data[i];
+          finalImageData.data[i + 1] = (1 - alpha) * currentImageData.data[i + 1] + alpha * blendedImageData.data[i + 1];
+          finalImageData.data[i + 2] = (1 - alpha) * currentImageData.data[i + 2] + alpha * blendedImageData.data[i + 2];
+          finalImageData.data[i + 3] = 255;
+        }
+
+        context.putImageData(finalImageData, 0, 0);
+      }
+
+      if (!options.freezeFrame) {
+        previousImage = currentImageData;
+      }
+
+      const offscreenCanvas = document.createElement('canvas');
+      offscreenCanvas.width = width;
+      offscreenCanvas.height = height;
+      const offscreenContext = offscreenCanvas.getContext('2d');
+      offscreenContext.drawImage(canvas, 0, 0, width, height);
+
+      snapshot.src = offscreenCanvas.toDataURL('image/png');
+    };
+
+    const startCapturing = () => {
+      if (captureInterval) clearInterval(captureInterval);
+      captureInterval = setInterval(captureFrame, options.delay);
+    };
+
+    const toggleFreezeFrame = () => {
+      options.freezeFrame = !options.freezeFrame;
+      const freezeButton = document.getElementById('freezeToggle');
+      freezeButton.textContent = options.freezeFrame ? 'Delayed Frame' : 'Freeze Frame';
+      delayControlGroup.style.display = freezeButton.textContent === 'Delayed Frame' ? 'none' : 'block';
+    };
+
+    const toggleSource = () => {
+      options.usingCamera = !options.usingCamera;
+
+      if (options.usingCamera) {
+        navigator.mediaDevices.getUserMedia({ video: true })
+          .then((stream) => {
+            video.srcObject = stream;
+            video.play();
+            videoUploadGroup.style.display = 'none';
+            sourceToggleButton.textContent = 'Switch to Video Upload';
+            errorMessage.style.display = 'none';
+          })
+          .catch(() => {
+            errorMessage.style.display = 'block';
+            videoUploadGroup.style.display = 'block';
+            sourceToggleButton.textContent = 'Switch to Camera';
+            options.usingCamera = false;
+          });
+      } else {
+        videoUploadGroup.style.display = 'block';
+        sourceToggleButton.textContent = 'Switch to Camera';
+        video.srcObject = null;
+        errorMessage.style.display = 'none';
+      }
+    };
+
+    document.getElementById('restartVideo').addEventListener('click', () => {
+      if (video.src) {
+        video.currentTime = 0;
+        video.play();
+      }
+    });
+
+    document.getElementById('stopVideo').addEventListener('click', () => {
+      if (video.src) {
+        video.pause();
+      }
+    });
+
+    document.getElementById('videoUpload').addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (file) {
+        const url = URL.createObjectURL(file);
+        video.src = url;
+        video.play();
+        startCapturing();
+        document.getElementById('videoControlsGroup').style.display = 'block';
+      }
+    });
+
+    document.getElementById('sourceToggle').addEventListener('click', toggleSource);
+    document.getElementById('freezeToggle').addEventListener('click', toggleFreezeFrame);
+    document.getElementById('resolution').addEventListener('input', (e) => {
+      options.resolution = parseInt(e.target.value, 10);
+      updateDisplay();
+    });
+
+    // Motion overlay slider
+    document.getElementById('motionBlend').addEventListener('input', (e) => {
+      options.motionBlend = parseInt(e.target.value, 10);
+      document.getElementById('motionBlendDisplay').textContent = options.motionBlend + '%';
+    });
+
+    startCapturing();
+  </script>
+</body>
+</html>
